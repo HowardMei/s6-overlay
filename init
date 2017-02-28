@@ -9,4 +9,6 @@
 
 
 /bin/importas -D /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin PATH PATH
-/etc/s6/init/init-stage1 $@
+##+ Don't forget to export default PATH @pr#151 from https://github.com/redbaron
+export PATH ${PATH}
+/etc/s6/init/init-stage1 ${@}
