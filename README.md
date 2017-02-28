@@ -25,7 +25,7 @@
 # The s6overlayscripts is a series of init scripts extracted from [s6-overlay](https://github.com/just-containers/s6-overlay).
 
 ## Quickstart
-  `s6` and `s6-portable-utils` packages should be installed before using this scripts.
+  `s6` and `s6-portable-utils` packages should be installed before using this scripts. Run `prep` after copy the scripts into docker image.  
 
 ## Goals
 The project has the following goals:
