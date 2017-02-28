@@ -22,52 +22,10 @@
 - [Notes](#notes)
 - [Contributing](#contributing)
 
-# s6 overlay [![Build Status](https://api.travis-ci.org/just-containers/s6-overlay.svg?branch=master)](https://travis-ci.org/just-containers/s6-overlay)
-
-The s6-overlay-builder project is a series of init scripts and utilities to ease creating Docker images using [s6](http://skarnet.org/software/s6/overview.html) as a process supervisor.
+# The s6overlayscripts is a series of init scripts extracted from [s6-overlay](https://github.com/just-containers/s6-overlay).
 
 ## Quickstart
-
-Build the following Dockerfile and try this guy out:
-
-```
-FROM ubuntu
-ADD https://github.com/just-containers/s6-overlay/releases/download/v1.11.0.1/s6-overlay-amd64.tar.gz /tmp/
-RUN tar xzf /tmp/s6-overlay-amd64.tar.gz -C /
-RUN apt-get update && \
-    apt-get install -y nginx && \
-    echo "daemon off;" >> /etc/nginx/nginx.conf
-ENTRYPOINT ["/init"]
-CMD ["nginx"]
-```
-
-```
-docker-host $ docker build -t demo .
-docker-host $ docker run --name s6demo -d -p 80:80 demo
-docker-host $ docker top s6demo acxf
-PID                 TTY                 STAT                TIME                COMMAND
-3788                ?                   Ss                  0:00                \_ s6-svscan
-3827                ?                   S                   0:00                | \_ foreground
-3834                ?                   S                   0:00                | | \_ foreground
-3879                ?                   S                   0:00                | | \_ nginx
-3880                ?                   S                   0:00                | | \_ nginx
-3881                ?                   S                   0:00                | | \_ nginx
-3882                ?                   S                   0:00                | | \_ nginx
-3883                ?                   S                   0:00                | | \_ nginx
-3828                ?                   S                   0:00                | \_ s6-supervise
-3829                ?                   S                   0:00                | \_ s6-supervise
-3830                ?                   Ss                  0:00                | \_ s6-log
-docker-host $ curl --head http://127.0.0.1/
-HTTP/1.1 200 OK
-Server: nginx/1.4.6 (Ubuntu)
-Date: Thu, 26 Mar 2015 14:57:34 GMT
-Content-Type: text/html
-Content-Length: 612
-Last-Modified: Tue, 04 Mar 2014 11:46:45 GMT
-Connection: keep-alive
-ETag: "5315bd25-264"
-Accept-Ranges: bytes
-```
+  `s6` and `s6-portable-utils` packages should be installed before using this scripts.
 
 ## Goals
 The project has the following goals:
@@ -84,7 +42,6 @@ The project has the following goals:
 * Able to operate in "The Docker Way"
 * Usable with all base images - Ubuntu, CentOS, Fedora, and even Busybox.
 * Distributed as a single .tar.gz file, to keep your image's number of layers small.
-* A whole set of utilities included in `s6` and `s6-portable-utils`. They include handy and composable utilities which make our lives much, much easier.
 * Log rotating out-of-the-box through `logutil-service` which uses [`s6-log`](http://skarnet.org/software/s6/s6-log.html) under the hood.
 
 ## The Docker Way?
@@ -138,17 +95,6 @@ From there, you have a couple of options:
 
 Using `CMD` is a really convenient way to take advantage of the s6-overlay. Your `CMD` can be given at build-time in the Dockerfile, or at runtime on the command line, either way is fine - it will be run under the s6 supervisor, and when it fails or exits, the container will exit. You can even run interactive programs under the s6 supervisor!
 
-For example:
-
-```
-FROM busybox
-ADD https://github.com/just-containers/s6-overlay/releases/download/v1.11.0.1/s6-overlay-amd64.tar.gz /tmp/
-RUN gunzip -c /tmp/s6-overlay-amd64.tar.gz | tar -xf - -C /
-ENTRYPOINT ["/init"]
-```
-
-```
-docker-host $ docker build -t s6demo .
 docker-host $ docker run -ti s6demo /bin/sh
 [fix-attrs.d] applying owners & permissions fixes...
 [fix-attrs.d] 00-runscripts: applying... 
@@ -359,55 +305,38 @@ RUN tar xzf /tmp/s6-overlay-amd64.tar.gz -C / --exclude="./bin" --exclude="./sbi
 This will prevent tar from deleting those `/bin` and `/sbin` symlinks, and
 everything will work as normal.
 
-## Performance
-
-And what about numbers? `s6-overlay` takes more or less **`904K`** compressed and **`3.4M`** uncompressed, that's very cheap! Although we already provide packaged base images, it is up to you which base image to use. And when it comes to how much time does it take to get supervision tree up and running, it's less than **`100ms`** #3!
-
-## Verifying Downloads
-
-The `s6-overlay` releases are signed using `gpg`, you can import our public key:
-
-```bash
-$ curl https://keybase.io/justcontainers/key.asc | gpg --import
-```
-
-Then verify the downloaded files:
-
-```bash
-$ gpg --verify s6-overlay-amd64.tar.gz.sig s6-overlay-amd64.tar.gz
-gpg: Signature made Sun 22 Nov 2015 09:11:29 AM CST using RSA key ID BD7BF0DC
-gpg: Good signature from "Just Containers <just-containers@jrjrtech.com>"
-```
 
 ## Notes
 
 * For now, `s6-overlay` doesn't support running it with a user different than `root`, so consequently Dockerfile `USER` directive is not supported (except `USER root` of course ;P).
+  The `s6overlayscripts` are extracted from `s6-overlay` to work with alpine builtin `s6` package.
 
-## Contributing
+### Authors
 
-Anyway you want! Open issues, open PRs, we welcome all contributors!
+Gorka Lerchundi Osa ([@glerchundi](https://github.com/glerchundi))  
+Laurent Bercot ([@skarnet](https://github.com/skarnet))  
+John Regan ([@jprjr](https://github.com/jprjr))  
+Dreamcat4 ([@dreamcat4](https://github.com/dreamcat4))  
 
-## Want to build the overlay on your system?
+### Contributors
 
-First create the output folder with its corresponding required permissions:
-```
-mkdir dist
-chmod o+rw dist
-```
+Scott Mebberson ([@smebberson](https://github.com/smebberson))
+azhuang ([@azhuang](https://github.com/azhuang))
 
-Then build from official skaware releases:
-```
-docker build .                                    | \
-tail -n 1 | awk '{ print $3; }'                   | \
-xargs docker run --rm -v `pwd`/dist:/builder/dist
-```
+### License
+Internet Systems Consortium license
+===================================
 
-Or use your own release folder:
-```
-docker build .                                                          | \
-tail -n 1 | awk '{ print $3; }'                                         | \
-xargs docker run --rm                                                     \
-  -e SKAWARE_SOURCE=file:///skaware  -v `pwd`/../skaware/dist:/skaware:ro \
-  -v `pwd`/dist:/builder/dist
-```
+Copyright (c) `2016`, `Laurent Bercot <ska at skarnet.org>`, `John Regan <john at jrjrtech.com>`, `Gorka Lerchundi Osa <glertxundi at gmail.com>`
 
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
