@@ -1,0 +1,6 @@
+#!/bin/execlineb -S0
+##- foreground { redirfd -w 1 /var/run/s6/env-stage3/S6_CMD_EXITED s6-echo -n -- "${1}" }
+##+ Make stage2 exit code available in stage3 @pr#186 from https://github.com/jrgensen
+foreground { redirfd -w 1 /var/run/s6/env-stage3/S6_STAGE2_EXITED s6-echo -n -- "${?}" }
+foreground { s6-echo -- "docker CMD exited ${1}" }
+s6-svscanctl -t /var/run/s6/services
