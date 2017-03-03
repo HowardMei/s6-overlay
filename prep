@@ -1,5 +1,6 @@
 #!/bin/sh
 set -x
+## Borrow from s6-overlay build script
 # create must exist directories
 mkdir -p /etc/s6/init/env-stage2
 mkdir -p /etc/cont-init.d /etc/cont-finish.d /etc/fix-attrs.d /etc/services.d
@@ -12,7 +13,7 @@ chmod 0700 /etc/s6/services/s6-fdholderd/supervise
 # fix perms for utilities
 chmod 0755 /usr/bin/fix-attrs
 chmod 0755 /usr/bin/logutil-*
-chmod 0755 /usr/bin/printcontenv
+chmod 0755 /usr/bin/*contenv
 chmod 0755 /usr/bin/with-*
 
 # fix init perms
