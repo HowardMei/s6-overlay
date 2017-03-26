@@ -1,29 +1,4 @@
-**Table of Contents**
-
-- [Quickstart](#quickstart)
-- [Goals](#goals)
-- [Features](#features)
-- [The Docker Way?](#the-docker-way)
-- [Our `s6-overlay` based images](#our-s6-overlay-based-images)
-- [Init stages](#init-stages)
-- [Usage](#usage)
-  - [Using `CMD`](#using-cmd)
-  - [Fixing ownership & permissions](#fixing-ownership--permissions)
-  - [Executing initialization And/Or finalization tasks](#executing-initialization-andor-finalization-tasks)
-  - [Writing a service script](#writing-a-service-script)
-  - [Writing an optional finish script](#writing-an-optional-finish-script)
-  - [Dropping privileges](#dropping-privileges)
-  - [Read-only Root Filesystem](#read-only-root-filesystem)  
-  - [Container environment](#container-environment)
-  - [Customizing `s6` behaviour](#customizing-s6-behaviour)
-- [Known issues and workarounds](#known-issues-and-workarounds)
-  - [`/bin` and `/sbin` are symlinks](#bin-and-sbin-are-symlinks)
-- [Performance](#performance)
-- [Verifying Downloads](#verifying-downloads)
-- [Notes](#notes)
-- [Contributing](#contributing)
-
-# The s6overlayscripts is a series of init scripts extracted from [s6-overlay](https://github.com/just-containers/s6-overlay).
+# The s6overlayscripts is the init scripts extracted from [s6-overlay](https://github.com/just-containers/s6-overlay).
 
 ## Quickstart
   `s6` and `s6-portable-utils` packages should be installed before using this scripts. Run `prep` after copy the scripts into docker image.  
@@ -45,30 +20,10 @@ The project has the following goals:
 * Distributed as a single .tar.gz file, to keep your image's number of layers small.
 * Log rotating out-of-the-box through `logutil-service` which uses [`s6-log`](http://skarnet.org/software/s6/s6-log.html) under the hood.
 
-## The Docker Way?
-
-One of the oft-repeated Docker mantras is "one process per container", but we disagree. There's nothing inherently *bad* about running multiple processes in a container. The more abstract "one *thing* per container" is our policy - a container should do one thing, such as "run a chat service" or "run gitlab." This may involve multiple processes, which is fine.
-
-The other reason image authors shy away from process supervisors is they believe a process supervisor *must* restart failed services, meaning the Docker container will never die.
-
-This does effectively break the Docker ecosystem - most images run one process that will exit when there's an error. By exiting on error, you allow the system administrator to handle failures however they prefer. If your image will never exit, you now need some alternative method of error recovery and failure notification.
-
-Our policy is that if "the thing" fails, then the container should fail, too. We do this by determining which processes can restart, and which should bring down the container. For example, if `cron` or `syslog` fails, your container can most likely restart it without any ill effects, but if `ejabberd` fails, the container should exit so the system administrator can take action.
-
-Our interpretation of "The Docker Way" is thus:
-
-* Containers should do one thing
-* Containers should stop when that thing stops
-
-and our init system is designed to do exactly that! Your images will still behave like other Docker images and fit in with the existing ecosystem of images.
-
-See "Writing an optional finish script" under the [Usage](#usage) section for details on stopping "the thing."
-
 ## Our `s6-overlay` based images
 
 We've developed two docker images which can be used as base images:
-* [base](https://github.com/just-containers/base): Based on Ubuntu 14.04 LTS, it was intended to use as a general purpose image.
-* [base-alpine](https://github.com/just-containers/base-alpine): Based on Alpine Linux 3.1, as advertised on their website: "a security-oriented, lightweight Linux distribution based on musl libc and busybox" - the base image is under 10MB but still includes a package manager!
+* [aps6base](https://hub.docker.com/r/hwdm/aps6base/): Based on Alpine Edge@3.5, it was intended to serve as a general purpose image.
 
 ## Init stages
 
@@ -83,14 +38,28 @@ Our overlay init is a properly customized one to run appropriately in containeri
 
 ## Usage
 
-The project is distributed as a standard .tar.gz file, which you extract at the root of your image. Afterwards, set your `ENTRYPOINT` to `/init`
+### Customizing `s6` behaviour
 
-Right now, we recommend using Docker's `ADD` directive instead of running `wget` or `curl` in a `RUN` directive - Docker is able to handle the https URL when you use `ADD`, whereas your base image might not be able to use https, or might not even have `wget` or `curl` installed at all.
+It is possible somehow to tweak `s6` behaviour by providing an already predefined set of environment variables to the execution context:
 
-From there, you have a couple of options:
-
-* Run your service/program as your image's `CMD`
-* Write a service script
+* `S6_KEEP_ENV` (default = 0): if set, then environment is not reset and whole supervision tree sees original set of env vars. It switches `with-contenv` into noop.
+* `S6_LOGGING` (default = 0): 
+  * **`0`**: Outputs everything to stdout/stderr.
+  * **`1`**: Uses an internal `catch-all` logger and persists everything on it, it is located in `/var/log/s6-uncaught-logs`. Nothing would be written to stdout/stderr.
+* `S6_BEHAVIOUR_IF_STAGE2_FAILS` (default = 0):
+  * **`0`**: Continue silently even if any script (`fix-attrs` or `cont-init`) has failed.
+  * **`1`**: Continue but warn with an annoying error message.
+  * **`2`**: Stop by sending a termination signal to the supervision tree.
+* `S6_KILL_FINISH_MAXTIME` (default = 5000): The maximum time (in milliseconds) a script in `/etc/cont-finish.d` could take before sending a `KILL` signal to it. Take into account that this parameter will be used per each script execution, it's not a max time for the whole set of scripts.
+* `S6_KILL_GRACETIME` (default = 3000): How long (in milliseconds) `s6` should wait to reap zombies before sending a `KILL` signal.
+* `S6_LOGGING_SCRIPT` (default = "n20 s1000000 T"): This env decides what to log and how, by default every line will prepend with ISO8601, rotated when the current logging file reaches 1mb and archived, at most, with 20 files.
+* `S6_CMD_ARG0` (default = not set): Value of this env var will be prepended to any `CMD` args passed by docker. Use it if you are migrting an existing image to a s6-overlay and want to make it a drop-in replacement, then setting this variable to a value of previously used ENTRYPOINT will improve compatibility with the way image is used.
+* `S6_FIX_ATTRS_HIDDEN` (default = 0): Controls how `fix-attrs.d` scripts process files and directories.
+  * **`0`**: Hidden files and directories are excluded.
+  * **`1`**: All files and directories are processed.
+* `S6_CMD_WAIT_FOR_SERVICES` (default = 0): In order to proceed executing CMD overlay will wait until services are up. Be aware that up doesn't mean ready. Depending if `notification-fd` was found inside the servicedir overlay will use `s6-svwait -U` or `s6-svwait -u` as the waiting statement.
+* `S6_CMD_WAIT_FOR_SERVICES_MAXTIME` (default = 5000): The maximum time (in milliseconds) the services could take to bring up before proceding to CMD executing.
+* `S6_READ_ONLY_ROOT` (default = 0): When running in a container whose root filesystem is read-only, set this env to **1** to inform init stage 2 that it should copy user-provided initialization scripts from `/etc` to `/var/run/s6/etc` before it attempts to change permissions, etc. See [Read-Only Root Filesystem](#read-only-root-filesystem) for more information.
 
 ### Using `CMD`
 
@@ -277,31 +246,6 @@ docker run -e S6_READ_ONLY_ROOT=1 --read-only --tmpfs /var:rw,exec [image name]
 
 **NOTE**: When using `S6_READ_ONLY_ROOT=1` you should _avoid using symbolic links_ in `fix-attrs.d`, `cont-init.d`, `cont-finish.d`, and `services.d`. Due to limitations of `s6`, symbolic links will be followed when these directories are copied to `/var/run/s6`, resulting in unexpected duplication.
 
-
-### Customizing `s6` behaviour
-
-It is possible somehow to tweak `s6` behaviour by providing an already predefined set of environment variables to the execution context:
-
-* `S6_KEEP_ENV` (default = 0): if set, then environment is not reset and whole supervision tree sees original set of env vars. It switches `with-contenv` into noop.
-* `S6_LOGGING` (default = 0): 
-  * **`0`**: Outputs everything to stdout/stderr.
-  * **`1`**: Uses an internal `catch-all` logger and persists everything on it, it is located in `/var/log/s6-uncaught-logs`. Nothing would be written to stdout/stderr.
-* `S6_BEHAVIOUR_IF_STAGE2_FAILS` (default = 0):
-  * **`0`**: Continue silently even if any script (`fix-attrs` or `cont-init`) has failed.
-  * **`1`**: Continue but warn with an annoying error message.
-  * **`2`**: Stop by sending a termination signal to the supervision tree.
-* `S6_KILL_FINISH_MAXTIME` (default = 5000): The maximum time (in milliseconds) a script in `/etc/cont-finish.d` could take before sending a `KILL` signal to it. Take into account that this parameter will be used per each script execution, it's not a max time for the whole set of scripts.
-* `S6_KILL_GRACETIME` (default = 3000): How long (in milliseconds) `s6` should wait to reap zombies before sending a `KILL` signal.
-* `S6_LOGGING_SCRIPT` (default = "n20 s1000000 T"): This env decides what to log and how, by default every line will prepend with ISO8601, rotated when the current logging file reaches 1mb and archived, at most, with 20 files.
-* `S6_CMD_ARG0` (default = not set): Value of this env var will be prepended to any `CMD` args passed by docker. Use it if you are migrting an existing image to a s6-overlay and want to make it a drop-in replacement, then setting this variable to a value of previously used ENTRYPOINT will improve compatibility with the way image is used.
-* `S6_FIX_ATTRS_HIDDEN` (default = 0): Controls how `fix-attrs.d` scripts process files and directories.
-  * **`0`**: Hidden files and directories are excluded.
-  * **`1`**: All files and directories are processed.
-* `S6_CMD_WAIT_FOR_SERVICES` (default = 0): In order to proceed executing CMD overlay will wait until services are up. Be aware that up doesn't mean ready. Depending if `notification-fd` was found inside the servicedir overlay will use `s6-svwait -U` or `s6-svwait -u` as the waiting statement.
-* `S6_CMD_WAIT_FOR_SERVICES_MAXTIME` (default = 5000): The maximum time (in milliseconds) the services could take to bring up before proceding to CMD executing.
-* `S6_READ_ONLY_ROOT` (default = 0): When running in a container whose root filesystem is read-only, set this env to **1** to inform init stage 2 that it should copy user-provided initialization scripts from `/etc` to `/var/run/s6/etc` before it attempts to change permissions, etc. See [Read-Only Root Filesystem](#read-only-root-filesystem) for more information.
-
-
 ## Known issues and workarounds
 
 ### `/bin` and `/sbin` are symlinks
@@ -322,37 +266,10 @@ This will prevent tar from deleting those `/bin` and `/sbin` symlinks, and
 everything will work as normal.
 
 
-## Notes
+## only support `root` users
 
 * For now, `s6-overlay` doesn't support running it with a user different than `root`, so consequently Dockerfile `USER` directive is not supported (except `USER root` of course ;P).
-  The `s6overlayscripts` are extracted from `s6-overlay` to work with alpine builtin `s6` package.
 
-### Authors
+### Authors & License
 
-Gorka Lerchundi Osa ([@glerchundi](https://github.com/glerchundi))  
-Laurent Bercot ([@skarnet](https://github.com/skarnet))  
-John Regan ([@jprjr](https://github.com/jprjr))  
-Dreamcat4 ([@dreamcat4](https://github.com/dreamcat4))  
-
-### Contributors
-
-Scott Mebberson ([@smebberson](https://github.com/smebberson))
-azhuang ([@azhuang](https://github.com/azhuang))
-
-### License
-Internet Systems Consortium license
-===================================
-
-Copyright (c) `2016`, `Laurent Bercot <ska at skarnet.org>`, `John Regan <john at jrjrtech.com>`, `Gorka Lerchundi Osa <glertxundi at gmail.com>`
-
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+See https://github.com/just-containers/s6-overlay
